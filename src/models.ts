@@ -6,7 +6,7 @@ type startEndAtTypes = string | number;
 export interface SimpleQuery<ItemModel> {
   limit?: number;
   where?: WhereFilter<ItemModel>[];
-  orderBy?: { path: string; dir?: OrderByDirection }[];
+  orderBy?: { path: string | Optional<ItemModel>; dir?: OrderByDirection }[];
   startAt?: startEndAtTypes[];
   endAt?: startEndAtTypes[];
   _internalStartAfterDocId?: any; // Used for pagination. If defined then we ignore startAt

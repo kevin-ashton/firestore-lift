@@ -20,7 +20,7 @@ export async function generateQueryRef<ItemModel>(
         query = query.where(field as any, operator, value) as any;
       } else if (w.length === 2) {
         let [item, operator] = queryRequest.where[i];
-        let r1 = generateFirestorePathFromObject(item)
+        let r1 = generateFirestorePathFromObject(item);
         query = query.where(r1.path, operator, r1.value) as any;
       } else {
         console.error("Unknown query request where");
@@ -28,10 +28,13 @@ export async function generateQueryRef<ItemModel>(
     }
   }
   if (queryRequest.orderBy) {
-    let orderBy = [];
     for (let i = 0; i < queryRequest.orderBy.length; i++) {
       let orderByDetails = queryRequest.orderBy[i];
-      query = query.orderBy(orderByDetails.path as any, orderByDetails.dir || undefined) as any;
+      let path =
+        typeof orderByDetails.path === "string"
+          ? orderByDetails.path
+          : generateFirestorePathFromObject(orderByDetails.path).path;
+      query = query.orderBy(path as any, orderByDetails.dir || undefined) as any;
     }
   }
 
@@ -62,7 +65,10 @@ export async function generateQueryRef<ItemModel>(
   return query;
 }
 
-function generateFirestorePathFromObject(obj: any, acc: string[] = []): { path: string, value: boolean | string | number} {
+function generateFirestorePathFromObject(
+  obj: any,
+  acc: string[] = []
+): { path: string; value: boolean | string | number } {
   let type = typeof obj;
 
   if (["string", "number", "boolean"].includes(type)) {
