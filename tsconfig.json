@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "lib": ["es2015", "es2017", "dom"],
+    "skipLibCheck": true,
+    "target": "es2017",
+    "declaration": true,
+    "sourceMap": true,
+    "module": "commonjs",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["node_modules", "**/*.test.ts", "**/*.spec.ts"]
+}
