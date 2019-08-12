@@ -58,7 +58,7 @@ export class FirestoreLift<ItemModel> {
   public async querySubscriptionEntities(p: {
     queryRequest: SimpleQuery<ItemModel>;
   }): Promise<{
-    data: { subscribe: SubFn<ItemModel> };
+    subscribe: SubFn<ItemModel>;
     unsubscribe: () => void;
   }> {
     let entities: any = {};
@@ -102,9 +102,10 @@ export class FirestoreLift<ItemModel> {
     };
 
     return {
-      data: { subscribe: subFn },
+      subscribe: subFn,
       unsubscribe: () => {
         console.log("Unsubscribe query entities");
+        sbFns = [];
         if (this.querySubscriptions[subId]) {
           this.querySubscriptions[subId]();
           delete this.querySubscriptions[subId];

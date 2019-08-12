@@ -208,7 +208,8 @@ async function main() {
   let subTest2 = await personHelper.querySubscriptionEntities({
     queryRequest: {}
   });
-  subTest2.data.subscribe((data) => {
+
+  subTest2.subscribe((data) => {
     console.log("Data coming in in entity format");
     console.log(data);
   });
