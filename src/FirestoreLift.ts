@@ -13,6 +13,8 @@ import {
 import { generatePushID, generateQueryRef } from "./misc";
 import { BatchRunner } from "./BatchRunner";
 
+type SubFn<ItemModel> = (fn: (p: { ids: string[]; entities: { [key: string]: ItemModel } }) => void) => void;
+
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
   private readonly firestoreInstance: firebase.firestore.Firestore;
@@ -53,6 +55,64 @@ export class FirestoreLift<ItemModel> {
     return Object.keys(this.querySubscriptions).length;
   }
 
+  public async querySubscriptionEntities(p: {
+    queryRequest: SimpleQuery<ItemModel>;
+  }): Promise<{
+    data: { subscribe: SubFn<ItemModel> };
+    unsubscribe: () => void;
+  }> {
+    let entities: any = {};
+    let ids: string[] = [];
+    let subId = this.subCount;
+    this.subCount += 1;
+
+    let query = await generateQueryRef(p.queryRequest, this.collection, this.firestoreInstance as any);
+    let subRunning = false;
+
+    let sbFns = [];
+
+    let subFn: SubFn<ItemModel> = (fn) => {
+      sbFns.push(fn);
+
+      if (!subRunning) {
+        let unsubRef = query.onSnapshot((snapshot) => {
+          snapshot.docChanges().forEach((change) => {
+            switch (change.type) {
+              case "added":
+                ids.push(change.doc.id);
+                entities[change.doc.id] = change.doc.data();
+                break;
+              case "modified":
+                entities[change.doc.id] = change.doc.data();
+                break;
+              case "removed":
+                ids = ids.filter((i) => i !== change.doc.id);
+                delete entities[change.doc.id];
+                break;
+            }
+
+            for (let i = 0; i < sbFns.length; i++) {
+              sbFns[i]({ entities, ids });
+            }
+          });
+        });
+
+        this.querySubscriptions[subId] = unsubRef;
+      }
+    };
+
+    return {
+      data: { subscribe: subFn },
+      unsubscribe: () => {
+        console.log("Unsubscribe query entities");
+        if (this.querySubscriptions[subId]) {
+          this.querySubscriptions[subId]();
+          delete this.querySubscriptions[subId];
+        }
+      }
+    };
+  }
+
   public async querySubscription(p: {
     queryRequest: SimpleQuery<ItemModel>;
     cb: (p: { item: ItemModel; firestoreId: string; changeType: "added" | "modified" | "removed" }) => void;
@@ -72,7 +132,7 @@ export class FirestoreLift<ItemModel> {
 
     return {
       unsubscribe: () => {
-        console.log("Unsubscribe");
+        console.log("Unsubscribe query");
         this.querySubscriptions[subId]();
         delete this.querySubscriptions[subId];
       }

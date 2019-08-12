@@ -193,11 +193,31 @@ async function main() {
     queryRequest: {},
     cb: (p) => {
       console.log("sub data...");
+      console.log(p);
     }
   });
   console.log(personHelper.getSubscriptionCount());
   await new Promise((r) => setTimeout(() => r(), 1000));
   subTest.unsubscribe();
+  console.log(personHelper.getSubscriptionCount());
+
+  console.log("-----------------------------------");
+  console.log("Run Entity Query Subscription");
+  console.log("-----------------------------------");
+  console.log(personHelper.getSubscriptionCount());
+  let subTest2 = await personHelper.querySubscriptionEntities({
+    queryRequest: {}
+  });
+  subTest2.data.subscribe((data) => {
+    console.log("Data coming in in entity format");
+    console.log(data);
+  });
+  console.log(personHelper.getSubscriptionCount());
+  await new Promise((r) => setTimeout(() => r(), 1000));
+  console.log("Modify some data. Should come in as part of subscription.");
+  await personHelper.update({ id: dummyData[0].id, item: { age: 99 } });
+  await new Promise((r) => setTimeout(() => r(), 1000));
+  subTest2.unsubscribe();
   console.log(personHelper.getSubscriptionCount());
 
   try {
