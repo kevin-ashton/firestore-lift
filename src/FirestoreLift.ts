@@ -8,8 +8,7 @@ import {
   BatchTaskSetPath,
   Optional,
   OptionalFlex,
-  SimpleQuery,
-  MagicDeleteString
+  SimpleQuery
 } from "./models";
 import { generatePushID, generateQueryRef } from "./misc";
 import { BatchRunner } from "./BatchRunner";
@@ -22,25 +21,25 @@ type SubFn<ItemModel> = (
 
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
-  private readonly firestoreInstance: firebase.firestore.Firestore;
   private readonly batchRunner: BatchRunner;
   private readonly yupSchema: Schema<any>;
   private firestoreSubId: number = 1;
   private firestoreSubscriptions: any = {};
   private readonly prefixIdWithCollection: boolean;
   private readonly addIdPropertyByDefault: boolean;
+  private firestore: firebase.firestore.Firestore;
 
   constructor(config: {
     collection: string;
-    fireStoreInstance: firebase.firestore.Firestore;
+
     batchRunner: BatchRunner;
     yupSchema?: Schema<any>;
     prefixIdWithCollection: boolean;
     addIdPropertyByDefault: boolean;
   }) {
     this.collection = config.collection;
-    this.firestoreInstance = config.fireStoreInstance;
     this.batchRunner = config.batchRunner;
+    this.firestore = this.batchRunner.firestore();
     this.yupSchema = config.yupSchema;
     this.prefixIdWithCollection = config.prefixIdWithCollection;
     this.addIdPropertyByDefault = config.addIdPropertyByDefault;
@@ -48,12 +47,6 @@ export class FirestoreLift<ItemModel> {
 
   public generateId() {
     return this.prefixIdWithCollection ? `${this.collection}-${generatePushID()}` : generatePushID();
-  }
-
-  // During an update put this in a field to signal it should be updated
-  // We use a magic string for deletes so we can pass around batches of change sets to be environment agnostic. The actual delete function is added from the firestore later when a batch is executed.
-  public getDeleteMagicValue(): any {
-    return MagicDeleteString;
   }
 
   public getSubscriptionCount(): number {
@@ -64,7 +57,7 @@ export class FirestoreLift<ItemModel> {
     let firestoreSubId = this.firestoreSubId;
     this.firestoreSubId += 1;
 
-    let queryRef = await generateQueryRef(query, this.collection, this.firestoreInstance as any);
+    let queryRef = await generateQueryRef(query, this.collection, this.firestore as any);
 
     let subFns = [];
     return {
@@ -109,7 +102,7 @@ export class FirestoreLift<ItemModel> {
   async query(
     queryRequest: SimpleQuery<ItemModel>
   ): Promise<{ items: ItemModel[]; nextQuery?: SimpleQuery<ItemModel> }> {
-    let query = await generateQueryRef(queryRequest, this.collection, this.firestoreInstance as any);
+    let query = await generateQueryRef(queryRequest, this.collection, this.firestore as any);
     let results = [];
     let res = await query.get();
     for (let i = 0; i < res.docs.length; i++) {
@@ -149,7 +142,7 @@ export class FirestoreLift<ItemModel> {
     for (let i = 0; i < ids.length; i++) {
       p.push(
         (async () => {
-          let res = await this.firestoreInstance
+          let res = await this.firestore
             .collection(this.collection)
             .doc(ids[i])
             .get();

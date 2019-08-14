@@ -3,7 +3,7 @@ import { BatchTask, BatchTaskEmpty, MagicDeleteString, MagicIncrementString } fr
 import { generateFirestorePathFromObject } from "./misc";
 
 export class BatchRunner {
-  private firestore: typeof firebase.firestore;
+  public firestore: typeof firebase.firestore;
 
   constructor(config: { firestore: typeof firebase.firestore }) {
     this.firestore = config.firestore;

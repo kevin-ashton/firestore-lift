@@ -1,6 +1,6 @@
 import { FirestoreLift } from "../src/FirestoreLift";
 import { BatchRunner } from "../src//BatchRunner";
-import { BatchTask, SimpleQuery } from "../src/models";
+import { BatchTask, SimpleQuery, MagicDeleteString } from "../src/models";
 import * as yup from "yup";
 import * as firebase from "firebase";
 
@@ -47,7 +47,6 @@ const batchRunner = new BatchRunner({
 
 let personHelper = new FirestoreLift<Person>({
   collection: "person",
-  fireStoreInstance: firebase.firestore(),
   batchRunner,
   yupSchema: PersonYup,
   addIdPropertyByDefault: true,
@@ -268,8 +267,8 @@ async function main() {
       id: "p1",
       item: {
         favFoods: {
-          american: personHelper.getDeleteMagicValue(),
-          asian: personHelper.getDeleteMagicValue(),
+          american: MagicDeleteString,
+          asian: MagicDeleteString,
           italian: "good pizza"
         }
       }
