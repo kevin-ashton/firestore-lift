@@ -4,6 +4,8 @@ import { BatchTask, SimpleQuery } from "../src/models";
 import * as yup from "yup";
 import * as firebase from "firebase";
 
+console.log("Init test");
+
 interface Person {
   id?: string;
   name: string;
@@ -126,147 +128,190 @@ async function resetData() {
 }
 
 async function main() {
-  // Email: test@example.com
-  // Password: 2*******y
-  await firebase
-    .auth()
-    .signInWithEmailAndPassword(
-      process.env.FIRESTORE_LIFT_EXAMPLE_USER_EMAIL,
-      process.env.FIRESTORE_LIFT_EXAMPLE_USER_PASSWORD
+  try {
+    // Email: test@example.com
+    // Password: 2*******y
+    await firebase
+      .auth()
+      .signInWithEmailAndPassword(
+        process.env.FIRESTORE_LIFT_EXAMPLE_USER_EMAIL,
+        process.env.FIRESTORE_LIFT_EXAMPLE_USER_PASSWORD
+      );
+    await resetData();
+
+    let batch: BatchTask[] = [];
+
+    console.log("-----------------------------------");
+    console.log("Fetch 1 Person");
+    console.log("-----------------------------------");
+    let r1 = await personHelper.get([dummyData[0].id]);
+    let p1 = r1[0];
+    console.log(p1);
+
+    console.log("-----------------------------------");
+    console.log("Fetch 2 People");
+    console.log("-----------------------------------");
+    // Fetch 2 people
+    let people = await personHelper.get([dummyData[0].id, dummyData[2].id]);
+    console.log(people);
+
+    console.log("-----------------------------------");
+    console.log("Batch Test (add, delete)");
+    console.log("-----------------------------------");
+    console.log("Add a person");
+    p1.name = "Kevin Ashton";
+    batch.push(
+      await personHelper.add(
+        {
+          item: {
+            id: "p10",
+            age: 60,
+            name: "Sue",
+            weight: 120,
+            favFoods: { american: "cheese", asian: "orange chicken", italian: "pizza" }
+          }
+        },
+        { returnBatchTask: true }
+      )
     );
-  await resetData();
 
-  let batch: BatchTask[] = [];
+    console.log("Delete a person");
+    batch.push(await personHelper.delete({ id: dummyData[1].id }, { returnBatchTask: true }));
 
-  console.log("-----------------------------------");
-  console.log("Fetch 1 Person");
-  console.log("-----------------------------------");
-  let r1 = await personHelper.get([dummyData[0].id]);
-  let p1 = r1[0];
-  console.log(p1);
+    console.log("Execute batch");
+    await batchRunner.executeBatch(batch);
 
-  console.log("-----------------------------------");
-  console.log("Fetch 2 People");
-  console.log("-----------------------------------");
-  // Fetch 2 people
-  let people = await personHelper.get([dummyData[0].id, dummyData[2].id]);
-  console.log(people);
+    console.log("-----------------------------------");
+    console.log("Run Query 1");
+    console.log("-----------------------------------");
+    let res2 = await personHelper.query({
+      limit: 100,
+      where: [[{ age: 0 }, ">="]],
+      orderBy: [{ pathObj: { age: true } }, { pathObj: { favFoods: { asian: true } }, dir: "desc" }],
+      startAt: [35, "orange chicken"]
+    });
+    console.log(JSON.stringify(res2, null, 2));
 
-  console.log("-----------------------------------");
-  console.log("Start Batch");
-  console.log("-----------------------------------");
-  console.log("Add a person");
-  p1.name = "Kevin Ashton";
-  batch.push(await personHelper.add({ item: p1 }, { returnBatchTask: true }));
+    console.log("-----------------------------------");
+    console.log("Run Query 2");
+    console.log("-----------------------------------");
+    let res3 = await personHelper.query({
+      limit: 100,
+      where: [[{ favFoods: { asian: "orange chicken" } }, "=="]]
+    });
+    console.log(JSON.stringify(res3, null, 2));
 
-  console.log("Delete a person");
-  batch.push(await personHelper.delete({ id: dummyData[1].id }, { returnBatchTask: true }));
+    console.log("-----------------------------------");
+    console.log("Run Query Subscription");
+    console.log("-----------------------------------");
+    console.log(personHelper.getSubscriptionCount());
+    let subTest = await personHelper.querySubscription({
+      queryRequest: {},
+      cb: (p) => {
+        console.log("sub data...");
+        console.log(JSON.stringify(p));
+      }
+    });
+    console.log(personHelper.getSubscriptionCount());
+    await new Promise((r) => setTimeout(() => r(), 1000));
+    subTest.unsubscribe();
+    console.log(personHelper.getSubscriptionCount());
 
-  console.log("Execute batch");
-  await batchRunner.executeBatch(batch);
+    console.log("-----------------------------------");
+    console.log("Run Entity Query Subscription");
+    console.log("-----------------------------------");
+    console.log(personHelper.getSubscriptionCount());
+    let subTest2 = await personHelper.querySubscriptionEntities({
+      queryRequest: {}
+    });
 
-  console.log("-----------------------------------");
-  console.log("Run Query 1");
-  console.log("-----------------------------------");
-  let res2 = await personHelper.query({
-    limit: 100,
-    where: [["age", ">=", 0]],
-    orderBy: [{ path: "age" }, { path: "favFoods.asian", dir: "desc" }],
-    startAt: [35, "orange chicken"]
-  });
-  console.log(JSON.stringify(res2, null, 2));
+    subTest2.subscribe((data) => {
+      console.log("Data coming in in entity format");
+      console.log(JSON.stringify(data));
+    });
+    console.log(personHelper.getSubscriptionCount());
+    await new Promise((r) => setTimeout(() => r(), 1000));
+    console.log("Modify some data. Should come in as part of subscription.");
+    await personHelper.update({ id: dummyData[0].id, item: { age: 99 } });
+    await new Promise((r) => setTimeout(() => r(), 1000));
+    subTest2.unsubscribe();
+    console.log(personHelper.getSubscriptionCount());
 
-  console.log("-----------------------------------");
-  console.log("Run Query 2");
-  console.log("-----------------------------------");
-  let res3 = await personHelper.query({
-    limit: 100,
-    where: [[{ favFoods: { asian: "orange chicken" } }, "=="]]
-  });
-  console.log(JSON.stringify(res3, null, 2));
-
-  console.log("-----------------------------------");
-  console.log("Run Query Subscription");
-  console.log("-----------------------------------");
-  console.log(personHelper.getSubscriptionCount());
-  let subTest = await personHelper.querySubscription({
-    queryRequest: {},
-    cb: (p) => {
-      console.log("sub data...");
-      console.log(p);
+    try {
+      console.log("-----------------------------------");
+      console.log("Try to insert a malformed person");
+      console.log("-----------------------------------");
+      await personHelper.add({ item: malformedObject });
+    } catch (e) {
+      console.log(e);
+      console.log("Caught bad person insert");
     }
-  });
-  console.log(personHelper.getSubscriptionCount());
-  await new Promise((r) => setTimeout(() => r(), 1000));
-  subTest.unsubscribe();
-  console.log(personHelper.getSubscriptionCount());
 
-  console.log("-----------------------------------");
-  console.log("Run Entity Query Subscription");
-  console.log("-----------------------------------");
-  console.log(personHelper.getSubscriptionCount());
-  let subTest2 = await personHelper.querySubscriptionEntities({
-    queryRequest: {}
-  });
-
-  subTest2.subscribe((data) => {
-    console.log("Data coming in in entity format");
-    console.log(data);
-  });
-  console.log(personHelper.getSubscriptionCount());
-  await new Promise((r) => setTimeout(() => r(), 1000));
-  console.log("Modify some data. Should come in as part of subscription.");
-  await personHelper.update({ id: dummyData[0].id, item: { age: 99 } });
-  await new Promise((r) => setTimeout(() => r(), 1000));
-  subTest2.unsubscribe();
-  console.log(personHelper.getSubscriptionCount());
-
-  try {
-    console.log("-----------------------------------");
-    console.log("Try to insert a malformed person");
-    console.log("-----------------------------------");
-    await personHelper.add({ item: malformedObject });
-  } catch (e) {
-    console.log(e);
-    console.log("Caught bad person insert");
-  }
-
-  try {
-    console.log("-----------------------------------");
-    console.log("Fetch id for person that doesn't exist");
-    console.log("-----------------------------------");
-    let res = await personHelper.get(["345343"]);
-    console.log(res);
-  } catch (e) {
-    console.log(e);
-    console.log("Caught bad id request");
-  }
-
-  console.log("-----------------------------------");
-  console.log("Query Pagination Testing");
-  console.log("-----------------------------------");
-
-  const runPersonPaginationTest = async (query: SimpleQuery<Person>) => {
-    let k1 = await personHelper.query(query);
-    console.log(k1.items);
-    if (k1.nextQuery) {
-      console.log("------------------------------------------------");
-      console.log("Appears to be more data to pagination. Run again");
-      await runPersonPaginationTest(k1.nextQuery);
-    } else {
-      console.log("------------------------------------------------");
-      console.log("No more pagination queries to run");
+    try {
+      console.log("-----------------------------------");
+      console.log("Fetch id for person that doesn't exist");
+      console.log("-----------------------------------");
+      let res = await personHelper.get(["345343"]);
+      console.log(res);
+    } catch (e) {
+      console.log(e);
+      console.log("Caught bad id request");
     }
-  };
 
-  await runPersonPaginationTest({ limit: 2 });
+    console.log("-----------------------------------");
+    console.log("Query Pagination Testing");
+    console.log("-----------------------------------");
 
-  console.log("-----------------------------------");
-  console.log("Delete from path using an update");
-  console.log("-----------------------------------");
+    const runPersonPaginationTest = async (query: SimpleQuery<Person>) => {
+      let k1 = await personHelper.query(query);
+      console.log(JSON.stringify(k1.items));
+      if (k1.nextQuery) {
+        console.log("------------------------------------------------");
+        console.log("Appears to be more data to pagination. Run again");
+        await runPersonPaginationTest(k1.nextQuery);
+      } else {
+        console.log("------------------------------------------------");
+        console.log("No more pagination queries to run");
+      }
+    };
 
-  await personHelper.update({ id: "p1", item: { favFoods: { american: personHelper.getDeleteMagicValue() } } });
-  console.log("Finish");
+    await runPersonPaginationTest({ limit: 2 });
+
+    console.log("-----------------------------------");
+    console.log("Delete from path using an update");
+    console.log("-----------------------------------");
+
+    await personHelper.update({
+      id: "p1",
+      item: {
+        favFoods: {
+          american: personHelper.getDeleteMagicValue(),
+          asian: personHelper.getDeleteMagicValue(),
+          italian: "good pizza"
+        }
+      }
+    });
+    let personAfterUpdate = (await personHelper.get(["p1"]))[0];
+    console.log(JSON.stringify(personAfterUpdate));
+
+    console.log("-----------------------------------");
+    console.log("Check set path");
+    console.log("-----------------------------------");
+
+    await personHelper.setPath({
+      id: "p4",
+      pathObj: { favFoods: true },
+      value: { favFoods: { american: "yummy hot dog", asian: "yummy sushi" } }
+    });
+
+    let personAfterUpdate2 = (await personHelper.get(["p4"]))[0];
+    console.log(JSON.stringify(personAfterUpdate2));
+
+    console.log("Finish");
+  } catch (e) {
+    console.log("Error");
+    console.log(e);
+  }
   process.exit(0);
 }
 

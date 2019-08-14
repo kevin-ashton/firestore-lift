@@ -1,5 +1,6 @@
 import * as firebase from "firebase";
 import { BatchTask, BatchTaskEmpty, MagicDeleteString } from "./models";
+import { generateFirestorePathFromObject } from "./misc";
 
 export class BatchRunner {
   private firestoreInstance: firebase.firestore.Firestore;
@@ -27,6 +28,9 @@ export class BatchRunner {
         }
       }
     }
+    if (typeof obj === "string" && obj === MagicDeleteString) {
+      return this.firestoreModule.FieldValue.delete();
+    }
     return obj;
   }
 
@@ -49,9 +53,16 @@ export class BatchRunner {
           case "add":
             batch.set(ref, task.doc);
             break;
-          case "shallowUpdate":
-            newObj = this.checkForMagicDeleteString(task.doc);
-            batch.update(ref, newObj);
+          case "setPath":
+            let p = generateFirestorePathFromObject(task.pathObj);
+            let newPathVal = p.path.split(".").reduce((acc, val) => {
+              if (acc[val] === undefined) {
+                throw new Error("Missing value for setPath update");
+              }
+              return acc[val];
+            }, task.value);
+            newPathVal = this.checkForMagicDeleteString(newPathVal);
+            batch.update(ref, p.path, newPathVal);
             break;
           case "update":
             newObj = this.checkForMagicDeleteString(task.doc);

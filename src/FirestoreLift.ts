@@ -4,9 +4,10 @@ import {
   BatchTaskAdd,
   BatchTaskDelete,
   BatchTaskEmpty,
-  BatchTaskShallowUpdate,
   BatchTaskUpdate,
+  BatchTaskSetPath,
   Optional,
+  OptionalFlex,
   SimpleQuery,
   MagicDeleteString
 } from "./models";
@@ -175,6 +176,7 @@ export class FirestoreLift<ItemModel> {
     return true;
   }
 
+  // Fetches a batch of documents based on ids
   async get(ids: string[], options: { ignoreMissingIds: boolean } = { ignoreMissingIds: false }): Promise<ItemModel[]> {
     let p = [];
     let warnings = [];
@@ -220,6 +222,7 @@ export class FirestoreLift<ItemModel> {
     return docs;
   }
 
+  // Adds a document
   async add(
     request: { item: ItemModel },
     config?: { returnBatchTask: boolean }
@@ -246,14 +249,16 @@ export class FirestoreLift<ItemModel> {
     }
   }
 
-  async shallowUpdate(
-    request: { id: string; item: Optional<ItemModel> },
+  // Destructive update/delete for document path. Does not merge with existing data.
+  async setPath(
+    request: { id: string; pathObj: OptionalFlex<ItemModel>; value: Optional<ItemModel> },
     config?: { returnBatchTask: boolean }
-  ): Promise<BatchTaskShallowUpdate | BatchTaskEmpty> {
-    let task: BatchTaskShallowUpdate = {
-      type: "shallowUpdate",
+  ): Promise<BatchTaskSetPath | BatchTaskEmpty> {
+    let task: BatchTaskSetPath = {
+      type: "setPath",
       id: request.id,
-      doc: request.item,
+      pathObj: request.pathObj,
+      value: request.value,
       collection: this.collection
     };
     if (config && config.returnBatchTask) {
@@ -263,6 +268,7 @@ export class FirestoreLift<ItemModel> {
     }
   }
 
+  // Updates/deletes parts of a document. Will merge with existing data.
   async update(
     request: { id: string; item: Optional<ItemModel> },
     config?: { returnBatchTask: boolean }
@@ -280,6 +286,7 @@ export class FirestoreLift<ItemModel> {
     }
   }
 
+  // Deletes a document
   async delete(r: { id: string }, config?: { returnBatchTask: boolean }): Promise<BatchTaskDelete | BatchTaskEmpty> {
     let task: BatchTaskDelete = {
       type: "delete",
