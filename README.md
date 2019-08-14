@@ -50,3 +50,10 @@ let personHelper = new FirestoreLift<Person>({
   prefixIdWithCollection: true
 });
 ```
+
+
+### Limitations
+
+* Do not support sub-collections
+* Do not support collection-groups
+* Do not support array data types (they are stored as objects anyway)

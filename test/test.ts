@@ -186,7 +186,7 @@ async function main() {
     console.log("-----------------------------------");
     let res2 = await personHelper.query({
       limit: 100,
-      where: [[{ age: 0 }, ">="]],
+      where: [{ age: [">=", 0] }],
       orderBy: [{ pathObj: { age: true } }, { pathObj: { favFoods: { asian: true } }, dir: "desc" }],
       startAt: [35, "orange chicken"]
     });
@@ -197,37 +197,23 @@ async function main() {
     console.log("-----------------------------------");
     let res3 = await personHelper.query({
       limit: 100,
-      where: [[{ favFoods: { asian: "orange chicken" } }, "=="]]
+      where: [{ favFoods: { asian: ["==", "orange chicken"] } }]
     });
     console.log(JSON.stringify(res3, null, 2));
-
-    console.log("-----------------------------------");
-    console.log("Run Query Subscription");
-    console.log("-----------------------------------");
-    console.log(personHelper.getSubscriptionCount());
-    let subTest = await personHelper.querySubscription({
-      queryRequest: {},
-      cb: (p) => {
-        console.log("sub data...");
-        console.log(JSON.stringify(p));
-      }
-    });
-    console.log(personHelper.getSubscriptionCount());
-    await new Promise((r) => setTimeout(() => r(), 1000));
-    subTest.unsubscribe();
-    console.log(personHelper.getSubscriptionCount());
 
     console.log("-----------------------------------");
     console.log("Run Entity Query Subscription");
     console.log("-----------------------------------");
     console.log(personHelper.getSubscriptionCount());
-    let subTest2 = await personHelper.querySubscriptionEntities({
+    let subTest2 = await personHelper.querySubscription({
       queryRequest: {}
     });
 
     subTest2.subscribe((data) => {
-      console.log("Data coming in in entity format");
-      console.log(JSON.stringify(data));
+      console.log("---------------------------------");
+      console.log("Data coming");
+      console.log(JSON.stringify(data.items));
+      console.log(data.metadata);
     });
     console.log(personHelper.getSubscriptionCount());
     await new Promise((r) => setTimeout(() => r(), 1000));

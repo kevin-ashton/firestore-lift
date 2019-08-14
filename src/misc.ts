@@ -14,9 +14,14 @@ export async function generateQueryRef<ItemModel>(
 
   if (queryRequest.where) {
     for (let i = 0; i < queryRequest.where.length; i++) {
-      let [item, operator] = queryRequest.where[i];
-      let r1 = generateFirestorePathFromObject(item);
-      query = query.where(r1.path, operator, r1.value) as any;
+      let whereItem = queryRequest.where[i];
+      let r1 = generateFirestorePathFromObject(whereItem);
+
+      if (!(r1.value instanceof Array)) {
+        throw new Error("Must be an array. Not sure how the compiler let this happen...");
+      }
+
+      query = query.where(r1.path, r1.value[0], r1.value[1]) as any;
     }
   }
   if (queryRequest.orderBy) {
@@ -57,10 +62,10 @@ export async function generateQueryRef<ItemModel>(
 export function generateFirestorePathFromObject(
   obj: any,
   acc: string[] = []
-): { path: string; value: boolean | string | number } {
+): { path: string; value: boolean | string | number | any[] } {
   let type = typeof obj;
 
-  if (["string", "number", "boolean"].includes(type)) {
+  if (["string", "number", "boolean"].includes(type) || obj instanceof Array) {
     return { path: acc.join("."), value: obj };
   }
 

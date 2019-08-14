@@ -14,15 +14,17 @@ import {
 import { generatePushID, generateQueryRef } from "./misc";
 import { BatchRunner } from "./BatchRunner";
 
-type SubFn<ItemModel> = (fn: (p: { ids: string[]; entities: { [key: string]: ItemModel } }) => void) => void;
+type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
+
+type SubFn<ItemModel> = (fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: any }) => void) => void;
 
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
   private readonly firestoreInstance: firebase.firestore.Firestore;
   private readonly batchRunner: BatchRunner;
   private readonly yupSchema: Schema<any>;
-  private subCount: number = 1;
-  private querySubscriptions: any = {};
+  private firestoreSubId: number = 1;
+  private firestoreSubscriptions: any = {};
   private readonly prefixIdWithCollection: boolean;
   private readonly addIdPropertyByDefault: boolean;
 
@@ -53,91 +55,49 @@ export class FirestoreLift<ItemModel> {
   }
 
   public getSubscriptionCount(): number {
-    return Object.keys(this.querySubscriptions).length;
+    return Object.keys(this.firestoreSubscriptions).length;
   }
 
-  public async querySubscriptionEntities(p: {
+  public async querySubscription(p: {
     queryRequest: SimpleQuery<ItemModel>;
   }): Promise<{
     subscribe: SubFn<ItemModel>;
     unsubscribe: () => void;
   }> {
-    let entities: any = {};
-    let ids: string[] = [];
-    let subId = this.subCount;
-    this.subCount += 1;
+    this.firestoreSubscriptions;
+    let firestoreSubId = this.firestoreSubId;
+    this.firestoreSubId += 1;
 
     let query = await generateQueryRef(p.queryRequest, this.collection, this.firestoreInstance as any);
-    let subRunning = false;
 
-    let sbFns = [];
+    let subFns = [];
+    return {
+      subscribe: (fn) => {
+        subFns.push(fn);
 
-    let subFn: SubFn<ItemModel> = (fn) => {
-      sbFns.push(fn);
+        if (subFns.length === 0) {
+          this.firestoreSubscriptions[firestoreSubId] = query.onSnapshot((snapshot) => {
+            let docs = snapshot.docs.map((d) => d.data());
+            let changes: Change<ItemModel> = [];
 
-      if (!subRunning) {
-        let unsubRef = query.onSnapshot((snapshot) => {
-          snapshot.docChanges().forEach((change) => {
-            switch (change.type) {
-              case "added":
-                ids.push(change.doc.id);
-                entities[change.doc.id] = change.doc.data();
-                break;
-              case "modified":
-                entities[change.doc.id] = change.doc.data();
-                break;
-              case "removed":
-                ids = ids.filter((i) => i !== change.doc.id);
-                delete entities[change.doc.id];
-                break;
-            }
+            snapshot.docChanges().forEach((change) => {
+              changes.push({ item: change.doc.data() as any, changeType: change.type });
+            });
 
-            for (let i = 0; i < sbFns.length; i++) {
-              sbFns[i]({ entities, ids });
-            }
+            subFns.forEach((fn) => {
+              fn({ items: docs, changes, metaData: snapshot.metadata });
+            });
           });
-        });
-
-        this.querySubscriptions[subId] = unsubRef;
-      }
-    };
-
-    return {
-      subscribe: subFn,
-      unsubscribe: () => {
-        console.log("Unsubscribe query entities");
-        sbFns = [];
-        if (this.querySubscriptions[subId]) {
-          this.querySubscriptions[subId]();
-          delete this.querySubscriptions[subId];
         }
-      }
-    };
-  }
 
-  public async querySubscription(p: {
-    queryRequest: SimpleQuery<ItemModel>;
-    cb: (p: { item: ItemModel; firestoreId: string; changeType: "added" | "modified" | "removed" }) => void;
-  }): Promise<{ unsubscribe: () => void }> {
-    let query = await generateQueryRef(p.queryRequest, this.collection, this.firestoreInstance as any);
-
-    let unsubRef = query.onSnapshot((snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        p.cb({ item: change.doc.data() as any, changeType: change.type, firestoreId: change.doc.id });
-      });
-    });
-
-    let subId = this.subCount;
-    this.subCount += 1;
-
-    this.querySubscriptions[subId] = unsubRef;
-
-    return {
-      unsubscribe: () => {
-        console.log("Unsubscribe query");
-        this.querySubscriptions[subId]();
-        delete this.querySubscriptions[subId];
-      }
+        return function unsubscribeListener() {
+          subFns.splice(subFns.indexOf(fn), 1);
+          if (subFns.length === 0 && this.firestoreSubscriptions[firestoreSubId]) {
+            this.firestoreSubscriptions[firestoreSubId]();
+          }
+        };
+      },
+      unsubscribe: () => {}
     };
   }
 
