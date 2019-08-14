@@ -54,6 +54,7 @@ let personHelper = new FirestoreLift<Person>({
 
 ### Limitations
 
-* Do not support sub-collections
-* Do not support collection-groups
-* Do not support array data types (they are stored as objects anyway)
+* Expects every document in every collection to have an `id` property that matches the firestore document key
+* Does not support sub-collections
+* Does not support collection-groups
+* Does not support array data types (they are stored as objects anyway)

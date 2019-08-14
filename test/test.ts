@@ -42,8 +42,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 
 const batchRunner = new BatchRunner({
-  fireStoreInstance: firebase.firestore(),
-  firestoreModule: firebase.firestore
+  firestore: firebase.firestore
 });
 
 let personHelper = new FirestoreLift<Person>({
@@ -202,14 +201,12 @@ async function main() {
     console.log(JSON.stringify(res3, null, 2));
 
     console.log("-----------------------------------");
-    console.log("Run Entity Query Subscription");
+    console.log("Run Subscription");
     console.log("-----------------------------------");
     console.log(personHelper.getSubscriptionCount());
-    let subTest2 = await personHelper.querySubscription({
-      queryRequest: {}
-    });
+    let subTest2 = await personHelper.querySubscription({});
 
-    subTest2.subscribe((data) => {
+    let subR1 = subTest2.subscribe((data) => {
       console.log("---------------------------------");
       console.log("Data coming");
       console.log(JSON.stringify(data.items));
@@ -220,7 +217,7 @@ async function main() {
     console.log("Modify some data. Should come in as part of subscription.");
     await personHelper.update({ id: dummyData[0].id, item: { age: 99 } });
     await new Promise((r) => setTimeout(() => r(), 1000));
-    subTest2.unsubscribe();
+    subR1.unsubscribe();
     console.log(personHelper.getSubscriptionCount());
 
     try {

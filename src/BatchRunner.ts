@@ -1,41 +1,39 @@
 import * as firebase from "firebase";
-import { BatchTask, BatchTaskEmpty, MagicDeleteString } from "./models";
+import { BatchTask, BatchTaskEmpty, MagicDeleteString, MagicIncrementString } from "./models";
 import { generateFirestorePathFromObject } from "./misc";
 
 export class BatchRunner {
-  private firestoreInstance: firebase.firestore.Firestore;
+  private firestore: typeof firebase.firestore;
 
-  // Depending on the SDK passed into the BatchRunner (admin-tools vs firebase) this can be a bit different
-  private firestoreModule: any;
-
-  constructor(config: { fireStoreInstance: firebase.firestore.Firestore; firestoreModule: any }) {
-    this.firestoreInstance = config.fireStoreInstance;
-    this.firestoreModule = config.firestoreModule;
+  constructor(config: { firestore: typeof firebase.firestore }) {
+    this.firestore = config.firestore;
   }
 
   // We use a magic string for deletes so we can pass around batches of change sets to be environment agnostic
-  private checkForMagicDeleteString(obj: any) {
+  private checkForMagicStrings(obj: any) {
     if (typeof obj === "object") {
       let keys = Object.keys(obj);
       for (let i = 0; i < keys.length; i++) {
         let k = keys[i];
         if (obj[k] === MagicDeleteString) {
-          obj[k] = this.firestoreModule.FieldValue.delete();
+          obj[k] = this.firestore.FieldValue.delete();
+        } else if (obj[k] === MagicIncrementString) {
+          obj[k] = this.firestore.FieldValue.increment(1);
         } else if (typeof obj[k] === "object") {
-          obj[k] = this.checkForMagicDeleteString(obj[k]);
+          obj[k] = this.checkForMagicStrings(obj[k]);
         } else {
           obj[k] = obj[k];
         }
       }
     }
     if (typeof obj === "string" && obj === MagicDeleteString) {
-      return this.firestoreModule.FieldValue.delete();
+      return this.firestore.FieldValue.delete();
     }
     return obj;
   }
 
   async executeBatch(b: BatchTask[]): Promise<BatchTaskEmpty> {
-    let batch = this.firestoreInstance.batch();
+    let batch = this.firestore().batch();
     try {
       for (let i = 0; i < b.length; i++) {
         let task = b[i];
@@ -46,7 +44,9 @@ export class BatchRunner {
         if (!task.id) {
           throw Error(`Unable to process item. Lacks an id. Collection: ${task.collection}. Task Type: ${task.type}`);
         }
-        let ref = this.firestoreInstance.collection(task.collection).doc(task.id);
+        let ref = this.firestore()
+          .collection(task.collection)
+          .doc(task.id);
 
         let newObj;
         switch (task.type) {
@@ -61,11 +61,11 @@ export class BatchRunner {
               }
               return acc[val];
             }, task.value);
-            newPathVal = this.checkForMagicDeleteString(newPathVal);
+            newPathVal = this.checkForMagicStrings(newPathVal);
             batch.update(ref, p.path, newPathVal);
             break;
           case "update":
-            newObj = this.checkForMagicDeleteString(task.doc);
+            newObj = this.checkForMagicStrings(task.doc);
             batch.set(ref, newObj, { merge: true });
             break;
           case "delete":

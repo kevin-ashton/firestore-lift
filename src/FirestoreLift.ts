@@ -16,7 +16,9 @@ import { BatchRunner } from "./BatchRunner";
 
 type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
-type SubFn<ItemModel> = (fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: any }) => void) => void;
+type SubFn<ItemModel> = (
+  fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: firebase.firestore.SnapshotMetadata }) => void
+) => { unsubscribe: () => void };
 
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
@@ -58,25 +60,21 @@ export class FirestoreLift<ItemModel> {
     return Object.keys(this.firestoreSubscriptions).length;
   }
 
-  public async querySubscription(p: {
-    queryRequest: SimpleQuery<ItemModel>;
-  }): Promise<{
-    subscribe: SubFn<ItemModel>;
-    unsubscribe: () => void;
-  }> {
-    this.firestoreSubscriptions;
+  public async querySubscription(query: SimpleQuery<ItemModel>): Promise<{ subscribe: SubFn<ItemModel> }> {
     let firestoreSubId = this.firestoreSubId;
     this.firestoreSubId += 1;
 
-    let query = await generateQueryRef(p.queryRequest, this.collection, this.firestoreInstance as any);
+    let queryRef = await generateQueryRef(query, this.collection, this.firestoreInstance as any);
 
     let subFns = [];
     return {
       subscribe: (fn) => {
+        console.log("Subscribe to query");
+
         subFns.push(fn);
 
-        if (subFns.length === 0) {
-          this.firestoreSubscriptions[firestoreSubId] = query.onSnapshot((snapshot) => {
+        if (subFns.length === 1) {
+          let unsubFirestore = queryRef.onSnapshot((snapshot) => {
             let docs = snapshot.docs.map((d) => d.data());
             let changes: Change<ItemModel> = [];
 
@@ -85,19 +83,26 @@ export class FirestoreLift<ItemModel> {
             });
 
             subFns.forEach((fn) => {
-              fn({ items: docs, changes, metaData: snapshot.metadata });
+              fn({ items: docs, changes, metadata: snapshot.metadata });
             });
           });
+
+          this.firestoreSubscriptions[firestoreSubId] = {
+            unsubscribe: unsubFirestore,
+            query
+          };
         }
 
-        return function unsubscribeListener() {
-          subFns.splice(subFns.indexOf(fn), 1);
-          if (subFns.length === 0 && this.firestoreSubscriptions[firestoreSubId]) {
-            this.firestoreSubscriptions[firestoreSubId]();
+        return {
+          unsubscribe: () => {
+            subFns.splice(subFns.indexOf(fn), 1);
+            if (subFns.length === 0 && this.firestoreSubscriptions[firestoreSubId]) {
+              this.firestoreSubscriptions[firestoreSubId].unsubscribe();
+              delete this.firestoreSubscriptions[firestoreSubId];
+            }
           }
         };
-      },
-      unsubscribe: () => {}
+      }
     };
   }
 
