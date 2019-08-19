@@ -15,9 +15,15 @@ import { BatchRunner } from "./BatchRunner";
 
 type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
-type SubFn<ItemModel> = (
-  fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: firebase.firestore.SnapshotMetadata }) => void
-) => { unsubscribe: () => void };
+export type FirestoreLiftSubscription<ItemModel> = Promise<{
+  subscribe: (
+    fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: firebase.firestore.SnapshotMetadata }) => void
+  ) => {
+    unsubscribe: () => void;
+  };
+}>;
+
+export type UnpackFirestoreLiftSubscription<T> = T extends FirestoreLiftSubscription<infer U> ? U : T;
 
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
@@ -53,7 +59,7 @@ export class FirestoreLift<ItemModel> {
     return Object.keys(this.firestoreSubscriptions).length;
   }
 
-  public async querySubscription(query: SimpleQuery<ItemModel>): Promise<{ subscribe: SubFn<ItemModel> }> {
+  public async querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
     let firestoreSubId = this.firestoreSubId;
     this.firestoreSubId += 1;
 
