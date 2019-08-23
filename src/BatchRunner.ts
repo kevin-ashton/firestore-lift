@@ -83,8 +83,6 @@ export class BatchRunner {
         type: "empty"
       };
     } catch (e) {
-      console.error("Trouble executing batch");
-      console.error(e);
       throw e;
     }
   }
