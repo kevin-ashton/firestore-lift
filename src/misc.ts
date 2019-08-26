@@ -18,7 +18,9 @@ export async function generateQueryRef<ItemModel>(
       let r1 = generateFirestorePathFromObject(whereItem);
 
       if (!(r1.value instanceof Array)) {
-        throw new Error("Must be an array. Not sure how the compiler let this happen...");
+        throw new Error(
+          "Query value must be an array. Example: { where: [{id: ['==', '123']}] }.  It appears something like this has happened: { where: [{id: '123'}] }"
+        );
       }
 
       query = query.where(r1.path, r1.value[0], r1.value[1]) as any;
