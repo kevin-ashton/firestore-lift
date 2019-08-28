@@ -17,7 +17,12 @@ type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
 export type FirestoreLiftSubscription<ItemModel> = Promise<{
   subscribe: (
-    fn: (p: { items: ItemModel[]; changes: Change<ItemModel>[]; metadata: firebase.firestore.SnapshotMetadata }) => void
+    fn: (p: {
+      items: ItemModel[];
+      changes: Change<ItemModel>[];
+      metadata: firebase.firestore.SnapshotMetadata;
+    }) => void,
+    errorFn?: (e: Error) => void
   ) => {
     unsubscribe: () => void;
   };
@@ -65,17 +70,30 @@ export class FirestoreLift<ItemModel> {
     let queryRef = await generateQueryRef(query, this.collection, this.firestore as any);
 
     return {
-      subscribe: (fn, errorFn: (e: Error) => void = (e) => {}) => {
-        let unsubFirestore = queryRef.onSnapshot((snapshot) => {
-          let docs: any = snapshot.docs.map((d) => d.data());
-          let changes: Change<ItemModel> = [];
+      subscribe: (fn, errorFn?: (e: Error) => void) => {
+        let unsubFirestore = queryRef.onSnapshot(
+          (snapshot) => {
+            let docs: any = snapshot.docs.map((d) => d.data());
+            let changes: Change<ItemModel> = [];
 
-          snapshot.docChanges().forEach((change) => {
-            changes.push({ item: change.doc.data() as any, changeType: change.type });
-          });
+            snapshot.docChanges().forEach((change) => {
+              changes.push({ item: change.doc.data() as any, changeType: change.type });
+            });
 
-          fn({ items: docs, changes: changes as any, metadata: snapshot.metadata });
-        }, errorFn);
+            fn({ items: docs, changes: changes as any, metadata: snapshot.metadata });
+          },
+          (err) => {
+            if (errorFn) {
+              errorFn(err);
+            } else {
+              const queryObj = JSON.stringify(query, null, 2);
+              console.error(
+                err.message,
+                `in firestore-lift subscription on collection ${this.collection} with query:${queryObj}`
+              );
+            }
+          }
+        );
 
         this.firestoreSubscriptions[firestoreSubId] = {
           query
