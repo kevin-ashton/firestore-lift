@@ -67,24 +67,27 @@ export class FirestoreLift<ItemModel> {
 
     let subFns = [];
     return {
-      subscribe: (fn) => {
-        console.log("Subscribe to query");
-
+      subscribe: (fn, errorFn: (e: Error) => void = (e) => {}) => {
         subFns.push(fn);
 
         if (subFns.length === 1) {
-          let unsubFirestore = queryRef.onSnapshot((snapshot) => {
-            let docs = snapshot.docs.map((d) => d.data());
-            let changes: Change<ItemModel> = [];
+          let unsubFirestore = queryRef.onSnapshot(
+            (snapshot) => {
+              let docs = snapshot.docs.map((d) => d.data());
+              let changes: Change<ItemModel> = [];
 
-            snapshot.docChanges().forEach((change) => {
-              changes.push({ item: change.doc.data() as any, changeType: change.type });
-            });
+              snapshot.docChanges().forEach((change) => {
+                changes.push({ item: change.doc.data() as any, changeType: change.type });
+              });
 
-            subFns.forEach((fn) => {
-              fn({ items: docs, changes, metadata: snapshot.metadata });
-            });
-          });
+              subFns.forEach((fn) => {
+                fn({ items: docs, changes, metadata: snapshot.metadata });
+              });
+            },
+            (err) => {
+              errorFn(err);
+            }
+          );
 
           this.firestoreSubscriptions[firestoreSubId] = {
             unsubscribe: unsubFirestore,
