@@ -65,43 +65,30 @@ export class FirestoreLift<ItemModel> {
 
     let queryRef = await generateQueryRef(query, this.collection, this.firestore as any);
 
-    let subFns = [];
     return {
       subscribe: (fn, errorFn: (e: Error) => void = (e) => {}) => {
-        subFns.push(fn);
+        let unsubFirestore = queryRef.onSnapshot(
+          (snapshot) => {
+            let docs = snapshot.docs.map((d) => d.data());
+            let changes: Change<ItemModel> = [];
 
-        if (subFns.length === 1) {
-          let unsubFirestore = queryRef.onSnapshot(
-            (snapshot) => {
-              let docs = snapshot.docs.map((d) => d.data());
-              let changes: Change<ItemModel> = [];
+            snapshot.docChanges().forEach((change) => {
+              changes.push({ item: change.doc.data() as any, changeType: change.type });
+            });
 
-              snapshot.docChanges().forEach((change) => {
-                changes.push({ item: change.doc.data() as any, changeType: change.type });
-              });
+            fn({ items: docs, changes, metadata: snapshot.metadata });
+          },
+          errorFn
+        );
 
-              subFns.forEach((fn) => {
-                fn({ items: docs, changes, metadata: snapshot.metadata });
-              });
-            },
-            (err) => {
-              errorFn(err);
-            }
-          );
-
-          this.firestoreSubscriptions[firestoreSubId] = {
-            unsubscribe: unsubFirestore,
-            query
-          };
-        }
+        this.firestoreSubscriptions[firestoreSubId] = {
+          query
+        };
 
         return {
           unsubscribe: () => {
-            subFns.splice(subFns.indexOf(fn), 1);
-            if (subFns.length === 0 && this.firestoreSubscriptions[firestoreSubId]) {
-              this.firestoreSubscriptions[firestoreSubId].unsubscribe();
+              unsubFirestore();
               delete this.firestoreSubscriptions[firestoreSubId];
-            }
           }
         };
       }
