@@ -39,10 +39,11 @@ const firebaseConfig = {
   messagingSenderId: "965988214603",
   appId: "1:965988214603:web:1f66f5ea87563055"
 };
-firebase.initializeApp(firebaseConfig);
+let app = firebase.initializeApp(firebaseConfig);
 
 const batchRunner = new BatchRunner({
-  firestore: firebase.firestore
+  firestore: firebase.firestore,
+  app
 });
 
 let personHelper = new FirestoreLift<Person>({

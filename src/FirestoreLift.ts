@@ -37,7 +37,6 @@ export class FirestoreLift<ItemModel> {
 
   constructor(config: {
     collection: string;
-
     batchRunner: BatchRunner;
     yupSchema?: Schema<any>;
     prefixIdWithCollection: boolean;

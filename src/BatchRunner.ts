@@ -4,9 +4,11 @@ import { generateFirestorePathFromObject } from "./misc";
 
 export class BatchRunner {
   public firestore: typeof firebase.firestore;
+  public app: firebase.app.App;
 
-  constructor(config: { firestore: typeof firebase.firestore }) {
+  constructor(config: { firestore: typeof firebase.firestore; app: firebase.app.App }) {
     this.firestore = config.firestore;
+    this.app = config.app;
   }
 
   // We use a magic string for deletes so we can pass around batches of change sets to be environment agnostic
@@ -33,7 +35,7 @@ export class BatchRunner {
   }
 
   async executeBatch(b: BatchTask[]): Promise<BatchTaskEmpty> {
-    let batch = this.firestore().batch();
+    let batch = this.firestore(this.app).batch();
     try {
       for (let i = 0; i < b.length; i++) {
         let task = b[i];
@@ -44,7 +46,7 @@ export class BatchRunner {
         if (!task.id) {
           throw Error(`Unable to process item. Lacks an id. Collection: ${task.collection}. Task Type: ${task.type}`);
         }
-        let ref = this.firestore()
+        let ref = this.firestore(this.app)
           .collection(task.collection)
           .doc(task.id);
 
