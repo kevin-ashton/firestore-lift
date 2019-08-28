@@ -67,19 +67,16 @@ export class FirestoreLift<ItemModel> {
 
     return {
       subscribe: (fn, errorFn: (e: Error) => void = (e) => {}) => {
-        let unsubFirestore = queryRef.onSnapshot(
-          (snapshot) => {
-            let docs = snapshot.docs.map((d) => d.data());
-            let changes: Change<ItemModel> = [];
+        let unsubFirestore = queryRef.onSnapshot((snapshot) => {
+          let docs: any = snapshot.docs.map((d) => d.data());
+          let changes: Change<ItemModel> = [];
 
-            snapshot.docChanges().forEach((change) => {
-              changes.push({ item: change.doc.data() as any, changeType: change.type });
-            });
+          snapshot.docChanges().forEach((change) => {
+            changes.push({ item: change.doc.data() as any, changeType: change.type });
+          });
 
-            fn({ items: docs, changes, metadata: snapshot.metadata });
-          },
-          errorFn
-        );
+          fn({ items: docs, changes: changes as any, metadata: snapshot.metadata });
+        }, errorFn);
 
         this.firestoreSubscriptions[firestoreSubId] = {
           query
@@ -87,8 +84,8 @@ export class FirestoreLift<ItemModel> {
 
         return {
           unsubscribe: () => {
-              unsubFirestore();
-              delete this.firestoreSubscriptions[firestoreSubId];
+            unsubFirestore();
+            delete this.firestoreSubscriptions[firestoreSubId];
           }
         };
       }
