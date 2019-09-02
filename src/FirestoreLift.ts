@@ -49,7 +49,7 @@ export class FirestoreLift<ItemModel> {
   }) {
     this.collection = config.collection;
     this.batchRunner = config.batchRunner;
-    this.firestore = this.batchRunner.firestore();
+    this.firestore = this.batchRunner.firestore(this.batchRunner.app);
     this.yupSchema = config.yupSchema;
     this.prefixIdWithCollection = config.prefixIdWithCollection;
     this.addIdPropertyByDefault = config.addIdPropertyByDefault;

@@ -6,7 +6,7 @@
   "types": "dist/src/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "watch": "tsc -w"
+    "watch": "tsc -w --preserveWatchOutput"
   },
   "keywords": [],
   "author": "Kevin M Ashton",
