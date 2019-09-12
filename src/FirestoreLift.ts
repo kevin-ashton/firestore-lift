@@ -12,6 +12,7 @@ import {
 } from "./models";
 import { generatePushID, generateQueryRef } from "./misc";
 import { BatchRunner } from "./BatchRunner";
+import * as md5 from "md5";
 
 type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
@@ -30,12 +31,43 @@ export type FirestoreLiftSubscription<ItemModel> = Promise<{
 
 export type UnpackFirestoreLiftSubscription<T> = T extends FirestoreLiftSubscription<infer U> ? U : T;
 
+interface CurrentActiveSubscriptions {
+  [queryHash: string]: {
+    queryStringified: string;
+    subscriberCount: number;
+  };
+}
+
+interface Stats<T> {
+  statsInitMS: number;
+  docsFetched: number;
+  docsWritten: number; // Assumes the tasks were executed
+  totalSubscriptions: number;
+  maxTotalSubscriptionsAtOneTime: number;
+  currentSubscriptionSubscribers: CurrentActiveSubscriptions;
+}
+
 export class FirestoreLift<ItemModel> {
   private readonly collection: string;
   private readonly batchRunner: BatchRunner;
   private readonly yupSchema: Schema<any>;
-  private firestoreSubId: number = 1;
-  private firestoreSubscriptions: any = {};
+  public _stats: Stats<ItemModel> = {
+    statsInitMS: Date.now(),
+    docsFetched: 0,
+    docsWritten: 0,
+    currentSubscriptionSubscribers: {},
+    maxTotalSubscriptionsAtOneTime: 0,
+    totalSubscriptions: 0
+  };
+  private firestoreSubscriptionIdCounter: number = 1;
+  private firestoreSubscriptions: {
+    [queryHash: string]: {
+      query: SimpleQuery<ItemModel>;
+      fns: { [subId: string]: any };
+      errorFns: { [subId: string]: any };
+      firestoreUnsubscribeFn: any;
+    };
+  } = {};
   private readonly prefixIdWithCollection: boolean;
   private readonly addIdPropertyByDefault: boolean;
   private firestore: firebase.firestore.Firestore;
@@ -59,50 +91,105 @@ export class FirestoreLift<ItemModel> {
     return this.prefixIdWithCollection ? `${this.collection}-${generatePushID()}` : generatePushID();
   }
 
-  public getSubscriptionCount(): number {
-    return Object.keys(this.firestoreSubscriptions).length;
+  private registerSubscription(p: { uniqueSubscriptionId: number; queryHash: string; fn: any; errorFn?: any }) {
+    if (!this.firestoreSubscriptions[p.queryHash]) {
+      throw Error("Cannot register a subscription until it has been setup");
+    }
+
+    this.firestoreSubscriptions[p.queryHash].fns[p.uniqueSubscriptionId] = p.fn;
+    if (p.errorFn) {
+      this.firestoreSubscriptions[p.queryHash].errorFns[p.uniqueSubscriptionId] = p.errorFn;
+    }
+  }
+  private unregisterSubscription(p: { uniqueSubscriptionId: number; queryHash: string }) {
+    if (!this.firestoreSubscriptions[p.queryHash]) {
+      console.warn("Unable to unregister a subscription if it does not exist");
+      return;
+    }
+
+    delete this.firestoreSubscriptions[p.queryHash].fns[p.uniqueSubscriptionId];
+    delete this.firestoreSubscriptions[p.queryHash].errorFns[p.uniqueSubscriptionId];
+
+    if (Object.keys(this.firestoreSubscriptions[p.queryHash].fns).length <= 0) {
+      this.firestoreSubscriptions[p.queryHash].firestoreUnsubscribeFn();
+      delete this.firestoreSubscriptions[p.queryHash];
+    }
+  }
+
+  private updateSubscriptionStats() {
+    let currentSubscriptionSubscribers: CurrentActiveSubscriptions = {};
+
+    for (let queryHash in this.firestoreSubscriptions) {
+      currentSubscriptionSubscribers[queryHash] = {
+        queryStringified: JSON.stringify(this.firestoreSubscriptions[queryHash].query),
+        subscriberCount: Object.keys(this.firestoreSubscriptions[queryHash].fns).length
+      };
+    }
+
+    this._stats.currentSubscriptionSubscribers = currentSubscriptionSubscribers;
+
+    let currentTotalSubscriptions = Object.keys(this.firestoreSubscriptions).length;
+    if (currentTotalSubscriptions > this._stats.maxTotalSubscriptionsAtOneTime) {
+      this._stats.maxTotalSubscriptionsAtOneTime = currentTotalSubscriptions;
+    }
   }
 
   public async querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
-    let firestoreSubId = this.firestoreSubId;
-    this.firestoreSubId += 1;
-
+    let queryHash = md5(JSON.stringify(query));
     let queryRef = await generateQueryRef(query, this.collection, this.firestore as any);
 
     return {
       subscribe: (fn, errorFn?: (e: Error) => void) => {
-        let unsubFirestore = queryRef.onSnapshot(
-          (snapshot) => {
-            let docs: any = snapshot.docs.map((d) => d.data());
-            let changes: Change<ItemModel> = [];
+        let uniqueSubscriptionId = this.firestoreSubscriptionIdCounter;
+        this.firestoreSubscriptionIdCounter += 1;
+        if (!this.firestoreSubscriptions[queryHash]) {
+          // Doesn't exist so stub it out
+          this.firestoreSubscriptions[queryHash] = { fns: {}, errorFns: {}, firestoreUnsubscribeFn: () => {}, query };
+          // Register first function before subscribing
+          this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
 
-            snapshot.docChanges().forEach((change) => {
-              changes.push({ item: change.doc.data() as any, changeType: change.type });
-            });
+          let unsubFirestore = queryRef.onSnapshot(
+            (snapshot) => {
+              let docs: any = snapshot.docs.map((d) => d.data());
+              let changes: Change<ItemModel> = [];
 
-            fn({ items: docs, changes: changes as any, metadata: snapshot.metadata });
-          },
-          (err) => {
-            if (errorFn) {
-              errorFn(err);
-            } else {
+              this._stats.docsFetched += snapshot.docChanges().length;
+              snapshot.docChanges().forEach((change) => {
+                changes.push({ item: change.doc.data() as any, changeType: change.type });
+              });
+
+              for (let i in this.firestoreSubscriptions[queryHash].fns) {
+                this.firestoreSubscriptions[queryHash].fns[i]({
+                  items: docs,
+                  changes: changes as any,
+                  metadata: snapshot.metadata
+                });
+              }
+            },
+            (err) => {
               const queryObj = JSON.stringify(query, null, 2);
-              console.error(
-                err.message,
-                `in firestore-lift subscription on collection ${this.collection} with query:${queryObj}`
-              );
+              let msg = `${err.message} in firestore-lift subscription on collection ${this.collection} with query:${queryObj}`;
+              let detailedError = new Error(msg);
+              if (Object.keys(this.firestoreSubscriptions[queryHash].errorFns).length > 0) {
+                for (let i in this.firestoreSubscriptions[queryHash].errorFns) {
+                  this.firestoreSubscriptions[queryHash].errorFns[i](detailedError);
+                }
+              } else {
+                console.error(detailedError);
+              }
             }
-          }
-        );
-
-        this.firestoreSubscriptions[firestoreSubId] = {
-          query
-        };
+          );
+          this.firestoreSubscriptions[queryHash].firestoreUnsubscribeFn = unsubFirestore;
+          this._stats.totalSubscriptions += 1;
+        } else {
+          this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
+        }
+        this.updateSubscriptionStats();
 
         return {
           unsubscribe: () => {
-            unsubFirestore();
-            delete this.firestoreSubscriptions[firestoreSubId];
+            this.unregisterSubscription({ queryHash, uniqueSubscriptionId });
+            this.updateSubscriptionStats();
           }
         };
       }
@@ -129,6 +216,7 @@ export class FirestoreLift<ItemModel> {
       result.nextQuery = paginationQuery;
     }
 
+    this._stats.docsFetched += result.items.length;
     return result;
   }
 
@@ -187,6 +275,7 @@ export class FirestoreLift<ItemModel> {
       }
     }
 
+    this._stats.docsFetched += docs.length;
     return docs;
   }
 
@@ -210,6 +299,7 @@ export class FirestoreLift<ItemModel> {
       doc: request.item
     };
 
+    this._stats.docsWritten += 1;
     if (config && config.returnBatchTask) {
       return task;
     } else {
@@ -229,6 +319,7 @@ export class FirestoreLift<ItemModel> {
       value: request.value,
       collection: this.collection
     };
+    this._stats.docsWritten += 1;
     if (config && config.returnBatchTask) {
       return task;
     } else {
@@ -247,6 +338,7 @@ export class FirestoreLift<ItemModel> {
       doc: request.item,
       collection: this.collection
     };
+    this._stats.docsWritten += 1;
     if (config && config.returnBatchTask) {
       return task;
     } else {
@@ -261,6 +353,7 @@ export class FirestoreLift<ItemModel> {
       collection: this.collection,
       id: r.id
     };
+    this._stats.docsWritten += 1;
     if (config && config.returnBatchTask) {
       return task;
     } else {

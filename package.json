@@ -1,6 +1,6 @@
 {
   "name": "firestore-lift",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -16,10 +16,12 @@
   },
   "homepage": "https://github.com/kevin-ashton/firestore-lift#readme",
   "dependencies": {
+    "@types/md5": "^2.1.33",
     "@types/node": "^12.0.8",
     "@types/shortid": "^0.0.29",
     "@types/yup": "^0.26.16",
     "firebase": "^6.2.0",
+    "md5": "^2.2.1",
     "prettier": "^1.18.2",
     "shortid": "^2.2.14",
     "typescript": "^3.5.2",

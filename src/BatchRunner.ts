@@ -1,5 +1,11 @@
 import * as firebase from "firebase";
-import { BatchTask, BatchTaskEmpty, MagicDeleteString, MagicIncrementString } from "./models";
+import {
+  BatchTask,
+  BatchTaskEmpty,
+  MagicDeleteString,
+  MagicIncrementString,
+  MagicServerTimestampString
+} from "./models";
 import { generateFirestorePathFromObject } from "./misc";
 
 export class BatchRunner {
@@ -21,6 +27,8 @@ export class BatchRunner {
           obj[k] = this.firestore.FieldValue.delete();
         } else if (obj[k] === MagicIncrementString) {
           obj[k] = this.firestore.FieldValue.increment(1);
+        } else if (obj[k] === MagicServerTimestampString) {
+          obj[k] = this.firestore.FieldValue.serverTimestamp();
         } else if (typeof obj[k] === "object") {
           obj[k] = this.checkForMagicStrings(obj[k]);
         } else {

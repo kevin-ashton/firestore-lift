@@ -48,6 +48,7 @@ interface BatchTaskRoot {
 
 export const MagicDeleteString = "____DELETE_DELETE_DELETE_DELETE____";
 export const MagicIncrementString = "____INCREMENT_INCREMENT_INCREMENT____";
+export const MagicServerTimestampString = "____SEVRVERTIMESTAMP_SEVRVERTIMESTAMP_SEVRVERTIMESTAMP____";
 
 export interface BatchTaskAdd extends BatchTaskRoot {
   type: "add";

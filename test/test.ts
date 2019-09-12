@@ -183,13 +183,19 @@ async function main() {
     console.log("-----------------------------------");
     console.log("Run Query 1");
     console.log("-----------------------------------");
-    let res2 = await personHelper.query({
+    let res2 = await personHelper.querySubscription({
       limit: 100,
-      where: [{ age: [">=", 0] }],
+      where: [{ name: ["==", "Sue"] }, { age: [">=", 0] }],
       orderBy: [{ pathObj: { age: true } }, { pathObj: { favFoods: { asian: true } }, dir: "desc" }],
       startAt: [35, "orange chicken"]
     });
-    console.log(JSON.stringify(res2, null, 2));
+    let sub1 = res2.subscribe((p) => {
+      console.log(p.items);
+    });
+    await new Promise((r) => setTimeout(() => r(), 1000));
+
+    console.log(JSON.stringify(personHelper._stats, null, 2));
+    sub1.unsubscribe();
 
     console.log("-----------------------------------");
     console.log("Run Query 2");
@@ -203,7 +209,7 @@ async function main() {
     console.log("-----------------------------------");
     console.log("Run Subscription");
     console.log("-----------------------------------");
-    console.log(personHelper.getSubscriptionCount());
+
     let subTest2 = await personHelper.querySubscription({});
 
     let subR1 = subTest2.subscribe((data) => {
@@ -212,13 +218,14 @@ async function main() {
       console.log(JSON.stringify(data.items));
       console.log(data.metadata);
     });
-    console.log(personHelper.getSubscriptionCount());
+    console.log(JSON.stringify(personHelper._stats, null, 2));
+
     await new Promise((r) => setTimeout(() => r(), 1000));
     console.log("Modify some data. Should come in as part of subscription.");
     await personHelper.update({ id: dummyData[0].id, item: { age: 99 } });
     await new Promise((r) => setTimeout(() => r(), 1000));
+    console.log(JSON.stringify(personHelper._stats, null, 2));
     subR1.unsubscribe();
-    console.log(personHelper.getSubscriptionCount());
 
     try {
       console.log("-----------------------------------");
@@ -290,10 +297,12 @@ async function main() {
     let personAfterUpdate2 = (await personHelper.get(["p4"]))[0];
     console.log(JSON.stringify(personAfterUpdate2));
 
+    console.log(JSON.stringify(personHelper._stats, null, 2));
+
     console.log("Finish");
   } catch (e) {
     console.log("Error");
-    console.log(e);
+    console.error(e);
   }
   process.exit(0);
 }
