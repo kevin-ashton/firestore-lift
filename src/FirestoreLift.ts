@@ -38,7 +38,7 @@ interface CurrentActiveSubscriptions {
   };
 }
 
-interface Stats<T> {
+export interface FirestoreLiftStats {
   statsInitMS: number;
   docsFetched: number;
   docsWritten: number; // Assumes the tasks were executed
@@ -51,7 +51,7 @@ export class FirestoreLift<ItemModel> {
   private readonly collection: string;
   private readonly batchRunner: BatchRunner;
   private readonly yupSchema: Schema<any>;
-  public _stats: Stats<ItemModel> = {
+  public _stats: FirestoreLiftStats = {
     statsInitMS: Date.now(),
     docsFetched: 0,
     docsWritten: 0,
