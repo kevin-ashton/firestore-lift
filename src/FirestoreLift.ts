@@ -31,7 +31,7 @@ export type FirestoreLiftSubscription<ItemModel> = Promise<{
 
 export type UnpackFirestoreLiftSubscription<T> = T extends FirestoreLiftSubscription<infer U> ? U : T;
 
-interface CurrentActiveSubscriptions {
+interface ActiveSubscriptions {
   [queryHash: string]: {
     queryStringified: string;
     subscriberCount: number;
@@ -42,9 +42,8 @@ export interface FirestoreLiftStats {
   statsInitMS: number;
   docsFetched: number;
   docsWritten: number; // Assumes the tasks were executed
-  totalSubscriptions: number;
-  maxTotalSubscriptionsAtOneTime: number;
-  currentSubscriptionSubscribers: CurrentActiveSubscriptions;
+  totalSubscriptionsOverTime: number;
+  activeSubscriptions: ActiveSubscriptions;
 }
 
 export class FirestoreLift<ItemModel> {
@@ -55,9 +54,8 @@ export class FirestoreLift<ItemModel> {
     statsInitMS: Date.now(),
     docsFetched: 0,
     docsWritten: 0,
-    currentSubscriptionSubscribers: {},
-    maxTotalSubscriptionsAtOneTime: 0,
-    totalSubscriptions: 0
+    activeSubscriptions: {},
+    totalSubscriptionsOverTime: 0
   };
   private firestoreSubscriptionIdCounter: number = 1;
   private firestoreSubscriptions: {
@@ -117,21 +115,16 @@ export class FirestoreLift<ItemModel> {
   }
 
   private updateSubscriptionStats() {
-    let currentSubscriptionSubscribers: CurrentActiveSubscriptions = {};
+    let activeSubscriptions: ActiveSubscriptions = {};
 
     for (let queryHash in this.firestoreSubscriptions) {
-      currentSubscriptionSubscribers[queryHash] = {
+      activeSubscriptions[queryHash] = {
         queryStringified: JSON.stringify(this.firestoreSubscriptions[queryHash].query),
         subscriberCount: Object.keys(this.firestoreSubscriptions[queryHash].fns).length
       };
     }
 
-    this._stats.currentSubscriptionSubscribers = currentSubscriptionSubscribers;
-
-    let currentTotalSubscriptions = Object.keys(this.firestoreSubscriptions).length;
-    if (currentTotalSubscriptions > this._stats.maxTotalSubscriptionsAtOneTime) {
-      this._stats.maxTotalSubscriptionsAtOneTime = currentTotalSubscriptions;
-    }
+    this._stats.activeSubscriptions = activeSubscriptions;
   }
 
   public async querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
@@ -180,7 +173,7 @@ export class FirestoreLift<ItemModel> {
             }
           );
           this.firestoreSubscriptions[queryHash].firestoreUnsubscribeFn = unsubFirestore;
-          this._stats.totalSubscriptions += 1;
+          this._stats.totalSubscriptionsOverTime += 1;
         } else {
           this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
         }
