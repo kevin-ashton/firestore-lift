@@ -4,12 +4,12 @@ import * as shortid from "shortid";
 
 export const defaultQueryLimit = 1000;
 
-export async function generateQueryRef<ItemModel>(
+export function generateQueryRef<ItemModel>(
   queryRequest: SimpleQuery<ItemModel>,
   collection: string,
   fireStore: firebase.firestore.Firestore,
   startAfter?: any
-): Promise<firebase.firestore.CollectionReference> {
+): firebase.firestore.CollectionReference {
   let query = fireStore.collection(collection);
 
   if (queryRequest.where) {
@@ -34,13 +34,8 @@ export async function generateQueryRef<ItemModel>(
     }
   }
 
-  if (queryRequest._internalStartAfterDocId) {
-    let startAfterDoc = await fireStore
-      .collection(collection)
-      .doc(queryRequest._internalStartAfterDocId)
-      .get();
-    query = query.startAfter(startAfterDoc) as any;
-  } else {
+  // If an _internalStartAfterDocId exists then we will automaticaly append startAfter so no need to add this
+  if (!queryRequest._internalStartAfterDocId) {
     if (queryRequest.startAt) {
       query = query.startAt(...queryRequest.startAt) as any;
     }

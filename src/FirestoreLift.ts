@@ -16,7 +16,7 @@ import * as md5 from "md5";
 
 type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
-export type FirestoreLiftSubscription<ItemModel> = Promise<{
+export type FirestoreLiftSubscription<ItemModel> = {
   subscribe: (
     fn: (p: {
       items: ItemModel[];
@@ -27,7 +27,7 @@ export type FirestoreLiftSubscription<ItemModel> = Promise<{
   ) => {
     unsubscribe: () => void;
   };
-}>;
+};
 
 export type UnpackFirestoreLiftSubscription<T> = T extends FirestoreLiftSubscription<infer U> ? U : T;
 
@@ -127,9 +127,9 @@ export class FirestoreLift<ItemModel> {
     this._stats.activeSubscriptions = activeSubscriptions;
   }
 
-  public async querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
+  public querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
     let queryHash = md5(JSON.stringify(query));
-    let queryRef = await generateQueryRef(query, this.collection, this.firestore as any);
+    let queryRef = generateQueryRef(query, this.collection, this.firestore as any);
 
     return {
       subscribe: (fn, errorFn?: (e: Error) => void) => {
@@ -192,7 +192,15 @@ export class FirestoreLift<ItemModel> {
   async query(
     queryRequest: SimpleQuery<ItemModel>
   ): Promise<{ items: ItemModel[]; nextQuery?: SimpleQuery<ItemModel> }> {
-    let query = await generateQueryRef(queryRequest, this.collection, this.firestore as any);
+    let query = generateQueryRef(queryRequest, this.collection, this.firestore as any);
+    if (queryRequest._internalStartAfterDocId) {
+      // Find start doc. This is used for pagination
+      let startAfterDoc = await this.firestore
+        .collection(this.collection)
+        .doc(queryRequest._internalStartAfterDocId)
+        .get();
+      query = query.startAfter(startAfterDoc) as any;
+    }
     let results = [];
     let res = await query.get();
     for (let i = 0; i < res.docs.length; i++) {
