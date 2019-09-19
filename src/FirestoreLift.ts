@@ -64,6 +64,7 @@ export class FirestoreLift<ItemModel> {
       fns: { [subId: string]: any };
       errorFns: { [subId: string]: any };
       firestoreUnsubscribeFn: any;
+      currentValue?: any;
     };
   } = {};
   private readonly prefixIdWithCollection: boolean;
@@ -151,12 +152,14 @@ export class FirestoreLift<ItemModel> {
                 changes.push({ item: change.doc.data() as any, changeType: change.type });
               });
 
+              let value = {
+                items: docs,
+                changes: changes as any,
+                metadata: snapshot.metadata
+              };
+              this.firestoreSubscriptions[queryHash].currentValue = value;
               for (let i in this.firestoreSubscriptions[queryHash].fns) {
-                this.firestoreSubscriptions[queryHash].fns[i]({
-                  items: docs,
-                  changes: changes as any,
-                  metadata: snapshot.metadata
-                });
+                this.firestoreSubscriptions[queryHash].fns[i](value);
               }
             },
             (err) => {
@@ -175,6 +178,10 @@ export class FirestoreLift<ItemModel> {
           this.firestoreSubscriptions[queryHash].firestoreUnsubscribeFn = unsubFirestore;
           this._stats.totalSubscriptionsOverTime += 1;
         } else {
+          if (this.firestoreSubscriptions[queryHash].currentValue) {
+            // First time function gets a copy of the current value
+            fn(this.firestoreSubscriptions[queryHash].currentValue);
+          }
           this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
         }
         this.updateSubscriptionStats();
