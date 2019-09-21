@@ -32,8 +32,8 @@ export type FirestoreLiftSubscription<ItemModel> = {
 export type UnpackFirestoreLiftSubscription<T> = T extends FirestoreLiftSubscription<infer U> ? U : T;
 
 interface ActiveSubscriptions {
-  [queryHash: string]: {
-    queryStringified: string;
+  [subscriptionId: string]: {
+    subscriptionDetails: string;
     subscriberCount: number;
   };
 }
@@ -59,8 +59,8 @@ export class FirestoreLift<ItemModel> {
   };
   private firestoreSubscriptionIdCounter: number = 1;
   private firestoreSubscriptions: {
-    [queryHash: string]: {
-      query: SimpleQuery<ItemModel>;
+    [subscriptionId: string]: {
+      subscriptionDetails: any;
       fns: { [subId: string]: any };
       errorFns: { [subId: string]: any };
       firestoreUnsubscribeFn: any;
@@ -90,58 +90,117 @@ export class FirestoreLift<ItemModel> {
     return this.prefixIdWithCollection ? `${this.collection}-${generatePushID()}` : generatePushID();
   }
 
-  private registerSubscription(p: { uniqueSubscriptionId: number; queryHash: string; fn: any; errorFn?: any }) {
-    if (!this.firestoreSubscriptions[p.queryHash]) {
+  private registerSubscription(p: { uniqueSubscriptionId: number; subscriptionId: string; fn: any; errorFn?: any }) {
+    if (!this.firestoreSubscriptions[p.subscriptionId]) {
       throw Error("Cannot register a subscription until it has been setup");
     }
 
-    this.firestoreSubscriptions[p.queryHash].fns[p.uniqueSubscriptionId] = p.fn;
+    this.firestoreSubscriptions[p.subscriptionId].fns[p.uniqueSubscriptionId] = p.fn;
     if (p.errorFn) {
-      this.firestoreSubscriptions[p.queryHash].errorFns[p.uniqueSubscriptionId] = p.errorFn;
+      this.firestoreSubscriptions[p.subscriptionId].errorFns[p.uniqueSubscriptionId] = p.errorFn;
     }
   }
-  private unregisterSubscription(p: { uniqueSubscriptionId: number; queryHash: string }) {
-    if (!this.firestoreSubscriptions[p.queryHash]) {
+  private unregisterSubscription(p: { uniqueSubscriptionId: number; subscriptionId: string }) {
+    if (!this.firestoreSubscriptions[p.subscriptionId]) {
       console.warn("Unable to unregister a subscription if it does not exist");
       return;
     }
 
-    delete this.firestoreSubscriptions[p.queryHash].fns[p.uniqueSubscriptionId];
-    delete this.firestoreSubscriptions[p.queryHash].errorFns[p.uniqueSubscriptionId];
+    delete this.firestoreSubscriptions[p.subscriptionId].fns[p.uniqueSubscriptionId];
+    delete this.firestoreSubscriptions[p.subscriptionId].errorFns[p.uniqueSubscriptionId];
 
-    if (Object.keys(this.firestoreSubscriptions[p.queryHash].fns).length <= 0) {
-      this.firestoreSubscriptions[p.queryHash].firestoreUnsubscribeFn();
-      delete this.firestoreSubscriptions[p.queryHash];
+    if (Object.keys(this.firestoreSubscriptions[p.subscriptionId].fns).length <= 0) {
+      this.firestoreSubscriptions[p.subscriptionId].firestoreUnsubscribeFn();
+      delete this.firestoreSubscriptions[p.subscriptionId];
     }
   }
 
   private updateSubscriptionStats() {
     let activeSubscriptions: ActiveSubscriptions = {};
 
-    for (let queryHash in this.firestoreSubscriptions) {
-      activeSubscriptions[queryHash] = {
-        queryStringified: JSON.stringify(this.firestoreSubscriptions[queryHash].query),
-        subscriberCount: Object.keys(this.firestoreSubscriptions[queryHash].fns).length
+    for (let subscriptionId in this.firestoreSubscriptions) {
+      activeSubscriptions[subscriptionId] = {
+        subscriptionDetails: JSON.stringify(this.firestoreSubscriptions[subscriptionId].subscriptionDetails),
+        subscriberCount: Object.keys(this.firestoreSubscriptions[subscriptionId].fns).length
       };
     }
 
     this._stats.activeSubscriptions = activeSubscriptions;
   }
 
+  public docSubscription(p: { docId: string }): FirestoreLiftSubscription<ItemModel> {
+    let subscriptionId = md5(p.docId);
+    let docRef = this.firestore.collection(this.collection).doc(p.docId);
+
+    return {
+      subscribe: (fn, errorFn?: (e: Error) => void) => {
+        let uniqueSubscriptionId = this.firestoreSubscriptionIdCounter;
+        this.firestoreSubscriptionIdCounter += 1;
+        if (!this.firestoreSubscriptions[subscriptionId]) {
+          let unsubFirestore = docRef.onSnapshot(
+            (snapshot) => {
+              let docs: any = [snapshot.data()];
+
+              this._stats.docsFetched += 1;
+
+              let value = {
+                items: docs,
+                changes: [],
+                metadata: snapshot.metadata
+              };
+              this.firestoreSubscriptions[subscriptionId].currentValue = value;
+              for (let i in this.firestoreSubscriptions[subscriptionId].fns) {
+                this.firestoreSubscriptions[subscriptionId].fns[i](value);
+              }
+            },
+            (err) => {
+              let msg = `${err.message} in firestore-lift subscription on collection ${this.collection} with docId:${p.docId}`;
+              let detailedError = new Error(msg);
+              if (Object.keys(this.firestoreSubscriptions[subscriptionId].errorFns).length > 0) {
+                for (let i in this.firestoreSubscriptions[subscriptionId].errorFns) {
+                  this.firestoreSubscriptions[subscriptionId].errorFns[i](detailedError);
+                }
+              } else {
+                console.error(detailedError);
+              }
+            }
+          );
+          this.firestoreSubscriptions[subscriptionId] = {
+            fns: {},
+            errorFns: {},
+            firestoreUnsubscribeFn: unsubFirestore,
+            subscriptionDetails: p
+          };
+          this.registerSubscription({ fn, errorFn, subscriptionId: subscriptionId, uniqueSubscriptionId });
+          this._stats.totalSubscriptionsOverTime += 1;
+        } else {
+          if (this.firestoreSubscriptions[subscriptionId].currentValue) {
+            // First time function gets a copy of the current value
+            fn(this.firestoreSubscriptions[subscriptionId].currentValue);
+          }
+          this.registerSubscription({ fn, errorFn, subscriptionId: subscriptionId, uniqueSubscriptionId });
+        }
+        this.updateSubscriptionStats();
+
+        return {
+          unsubscribe: () => {
+            this.unregisterSubscription({ subscriptionId: subscriptionId, uniqueSubscriptionId });
+            this.updateSubscriptionStats();
+          }
+        };
+      }
+    };
+  }
+
   public querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
-    let queryHash = md5(JSON.stringify(query));
+    let subscriptionId = md5(JSON.stringify(query));
     let queryRef = generateQueryRef(query, this.collection, this.firestore as any);
 
     return {
       subscribe: (fn, errorFn?: (e: Error) => void) => {
         let uniqueSubscriptionId = this.firestoreSubscriptionIdCounter;
         this.firestoreSubscriptionIdCounter += 1;
-        if (!this.firestoreSubscriptions[queryHash]) {
-          // Doesn't exist so stub it out
-          this.firestoreSubscriptions[queryHash] = { fns: {}, errorFns: {}, firestoreUnsubscribeFn: () => {}, query };
-          // Register first function before subscribing
-          this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
-
+        if (!this.firestoreSubscriptions[subscriptionId]) {
           let unsubFirestore = queryRef.onSnapshot(
             (snapshot) => {
               let docs: any = snapshot.docs.map((d) => d.data());
@@ -157,38 +216,44 @@ export class FirestoreLift<ItemModel> {
                 changes: changes as any,
                 metadata: snapshot.metadata
               };
-              this.firestoreSubscriptions[queryHash].currentValue = value;
-              for (let i in this.firestoreSubscriptions[queryHash].fns) {
-                this.firestoreSubscriptions[queryHash].fns[i](value);
+              this.firestoreSubscriptions[subscriptionId].currentValue = value;
+              for (let i in this.firestoreSubscriptions[subscriptionId].fns) {
+                this.firestoreSubscriptions[subscriptionId].fns[i](value);
               }
             },
             (err) => {
               const queryObj = JSON.stringify(query, null, 2);
               let msg = `${err.message} in firestore-lift subscription on collection ${this.collection} with query:${queryObj}`;
               let detailedError = new Error(msg);
-              if (Object.keys(this.firestoreSubscriptions[queryHash].errorFns).length > 0) {
-                for (let i in this.firestoreSubscriptions[queryHash].errorFns) {
-                  this.firestoreSubscriptions[queryHash].errorFns[i](detailedError);
+              if (Object.keys(this.firestoreSubscriptions[subscriptionId].errorFns).length > 0) {
+                for (let i in this.firestoreSubscriptions[subscriptionId].errorFns) {
+                  this.firestoreSubscriptions[subscriptionId].errorFns[i](detailedError);
                 }
               } else {
                 console.error(detailedError);
               }
             }
           );
-          this.firestoreSubscriptions[queryHash].firestoreUnsubscribeFn = unsubFirestore;
+          this.firestoreSubscriptions[subscriptionId] = {
+            fns: {},
+            errorFns: {},
+            firestoreUnsubscribeFn: unsubFirestore,
+            subscriptionDetails: query
+          };
+          this.registerSubscription({ fn, errorFn, subscriptionId, uniqueSubscriptionId });
           this._stats.totalSubscriptionsOverTime += 1;
         } else {
-          if (this.firestoreSubscriptions[queryHash].currentValue) {
+          if (this.firestoreSubscriptions[subscriptionId].currentValue) {
             // First time function gets a copy of the current value
-            fn(this.firestoreSubscriptions[queryHash].currentValue);
+            fn(this.firestoreSubscriptions[subscriptionId].currentValue);
           }
-          this.registerSubscription({ fn, errorFn, queryHash, uniqueSubscriptionId });
+          this.registerSubscription({ fn, errorFn, subscriptionId, uniqueSubscriptionId });
         }
         this.updateSubscriptionStats();
 
         return {
           unsubscribe: () => {
-            this.unregisterSubscription({ queryHash, uniqueSubscriptionId });
+            this.unregisterSubscription({ subscriptionId, uniqueSubscriptionId });
             this.updateSubscriptionStats();
           }
         };

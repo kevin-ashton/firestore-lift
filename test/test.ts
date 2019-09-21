@@ -227,6 +227,23 @@ async function main() {
     console.log(JSON.stringify(personHelper._stats, null, 2));
     subR1.unsubscribe();
 
+    console.log("-----------------------------------");
+    console.log("Doc Subscription");
+    console.log("-----------------------------------");
+    let subDoc = "subDoc01";
+    await personHelper.add({
+      item: { id: subDoc, age: 10, favFoods: { american: "a", asian: "b", italian: "c" }, name: "Ron", weight: 100 }
+    });
+    let docSubRef = personHelper.docSubscription({ docId: subDoc });
+    let docSub = docSubRef.subscribe((d) => {
+      console.log("Doc Subscription fires");
+      console.log(JSON.stringify(d.items, null, 2));
+    });
+    await new Promise((r) => setTimeout(() => r(), 500));
+    await personHelper.update({ id: subDoc, item: { favFoods: { american: "Burger" } } });
+    await new Promise((r) => setTimeout(() => r(), 500));
+    docSub.unsubscribe();
+
     try {
       console.log("-----------------------------------");
       console.log("Try to insert a malformed person");
