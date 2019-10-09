@@ -5,8 +5,8 @@
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w --preserveWatchOutput"
+    "ts-build": "tsc",
+    "ts-watch": "tsc -w --preserveWatchOutput"
   },
   "keywords": [],
   "author": "Kevin M Ashton",

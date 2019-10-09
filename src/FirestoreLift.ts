@@ -8,7 +8,8 @@ import {
   BatchTaskSetPath,
   Optional,
   OptionalFlex,
-  SimpleQuery
+  SimpleQuery,
+  startEndAtTypes
 } from "./models";
 import { generatePushID, generateQueryRef } from "./misc";
 import { BatchRunner } from "./BatchRunner";
@@ -16,13 +17,22 @@ import * as md5 from "md5";
 
 type Change<T> = { item: T; changeType: "added" | "modified" | "removed" }[];
 
+export type SubscriptionResultSet<ItemModel> = {
+  items: ItemModel[];
+  rawDocItems: (firebase.firestore.DocumentSnapshot | firebase.firestore.QueryDocumentSnapshot)[];
+  changes: Change<ItemModel>[];
+  metadata: firebase.firestore.SnapshotMetadata;
+};
+
+export type QueryResultSet<ItemModel> = {
+  items: ItemModel[];
+  rawDocItems: (firebase.firestore.DocumentSnapshot | firebase.firestore.QueryDocumentSnapshot)[];
+  nextQuery?: SimpleQuery<ItemModel>;
+};
+
 export type FirestoreLiftSubscription<ItemModel> = {
   subscribe: (
-    fn: (p: {
-      items: ItemModel[];
-      changes: Change<ItemModel>[];
-      metadata: firebase.firestore.SnapshotMetadata;
-    }) => void,
+    fn: (p: SubscriptionResultSet<ItemModel>) => void,
     errorFn?: (e: Error) => void
   ) => {
     unsubscribe: () => void;
@@ -120,7 +130,7 @@ export class FirestoreLift<ItemModel> {
 
     for (let subscriptionId in this.firestoreSubscriptions) {
       activeSubscriptions[subscriptionId] = {
-        subscriptionDetails: JSON.stringify(this.firestoreSubscriptions[subscriptionId].subscriptionDetails),
+        subscriptionDetails: this.firestoreSubscriptions[subscriptionId].subscriptionDetails,
         subscriberCount: Object.keys(this.firestoreSubscriptions[subscriptionId].fns).length
       };
     }
@@ -143,11 +153,13 @@ export class FirestoreLift<ItemModel> {
 
               this._stats.docsFetched += 1;
 
-              let value = {
+              let value: SubscriptionResultSet<ItemModel> = {
                 items: docs,
+                rawDocItems: [snapshot],
                 changes: [],
                 metadata: snapshot.metadata
               };
+
               this.firestoreSubscriptions[subscriptionId].currentValue = value;
               for (let i in this.firestoreSubscriptions[subscriptionId].fns) {
                 this.firestoreSubscriptions[subscriptionId].fns[i](value);
@@ -193,7 +205,7 @@ export class FirestoreLift<ItemModel> {
   }
 
   public querySubscription(query: SimpleQuery<ItemModel>): FirestoreLiftSubscription<ItemModel> {
-    let subscriptionId = md5(JSON.stringify(query));
+    let subscriptionId = md5(stringifyQuery(query));
     let queryRef = generateQueryRef(query, this.collection, this.firestore as any);
 
     return {
@@ -211,8 +223,9 @@ export class FirestoreLift<ItemModel> {
                 changes.push({ item: change.doc.data() as any, changeType: change.type });
               });
 
-              let value = {
+              let value: SubscriptionResultSet<ItemModel> = {
                 items: docs,
+                rawDocItems: snapshot.docs,
                 changes: changes as any,
                 metadata: snapshot.metadata
               };
@@ -222,7 +235,7 @@ export class FirestoreLift<ItemModel> {
               }
             },
             (err) => {
-              const queryObj = JSON.stringify(query, null, 2);
+              const queryObj = stringifyQuery(query);
               let msg = `${err.message} in firestore-lift subscription on collection ${this.collection} with query:${queryObj}`;
               let detailedError = new Error(msg);
               if (Object.keys(this.firestoreSubscriptions[subscriptionId].errorFns).length > 0) {
@@ -261,9 +274,7 @@ export class FirestoreLift<ItemModel> {
     };
   }
 
-  async query(
-    queryRequest: SimpleQuery<ItemModel>
-  ): Promise<{ items: ItemModel[]; nextQuery?: SimpleQuery<ItemModel> }> {
+  async query(queryRequest: SimpleQuery<ItemModel>): Promise<QueryResultSet<ItemModel>> {
     let query = generateQueryRef(queryRequest, this.collection, this.firestore as any);
     if (queryRequest._internalStartAfterDocId) {
       // Find start doc. This is used for pagination
@@ -281,7 +292,8 @@ export class FirestoreLift<ItemModel> {
       results.push(doc);
     }
 
-    let result: { items: ItemModel[]; nextQuery?: SimpleQuery<ItemModel> } = { items: results };
+    let result: QueryResultSet<ItemModel> = { items: results, rawDocItems: res.docs };
+
     if (res.size === queryRequest.limit) {
       let paginationQuery = { ...queryRequest };
       let lastDoc = res.docs[res.docs.length - 1];
@@ -433,4 +445,23 @@ export class FirestoreLift<ItemModel> {
       return await this.batchRunner.executeBatch([task]);
     }
   }
+}
+
+function stringifyQuery<ItemModel>(query: SimpleQuery<ItemModel>) {
+  function scrub(a: startEndAtTypes) {
+    if (typeof a !== "string" && typeof a !== "number") {
+      return a.id;
+    }
+    return a;
+  }
+
+  const scrubbedQuery = JSON.stringify({
+    ...query,
+    endAt: query.endAt ? query.endAt.map(scrub) : undefined,
+    endBefore: query.endBefore ? query.endBefore.map(scrub) : undefined,
+    startAt: query.startAt ? query.startAt.map(scrub) : undefined,
+    startAfter: query.startAfter ? query.startAfter.map(scrub) : undefined
+  });
+
+  return JSON.stringify(scrubbedQuery, null, 2);
 }

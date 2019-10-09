@@ -7,8 +7,7 @@ export const defaultQueryLimit = 1000;
 export function generateQueryRef<ItemModel>(
   queryRequest: SimpleQuery<ItemModel>,
   collection: string,
-  fireStore: firebase.firestore.Firestore,
-  startAfter?: any
+  fireStore: firebase.firestore.Firestore
 ): firebase.firestore.CollectionReference {
   let query = fireStore.collection(collection);
 
@@ -34,24 +33,25 @@ export function generateQueryRef<ItemModel>(
     }
   }
 
-  // If an _internalStartAfterDocId exists then we will automaticaly append startAfter so no need to add this
-  if (!queryRequest._internalStartAfterDocId) {
-    if (queryRequest.startAt) {
-      query = query.startAt(...queryRequest.startAt) as any;
-    }
+  if (queryRequest.startAt) {
+    query = query.startAt(...queryRequest.startAt) as any;
+  }
+
+  if (queryRequest.startAfter) {
+    query = query.startAfter(...queryRequest.startAfter) as any;
   }
 
   if (queryRequest.endAt) {
     query = query.endAt(...queryRequest.endAt) as any;
   }
 
+  if (queryRequest.endBefore) {
+    query = query.endBefore(...queryRequest.endBefore) as any;
+  }
+
   // Lock it to something to prevent massive batches but also to make it easier to detect if we need to paginate
   let limit = queryRequest.limit === undefined ? defaultQueryLimit : queryRequest.limit;
   query = query.limit(limit) as any;
-
-  if (startAfter) {
-    query.startAfter(startAfter);
-  }
 
   return query;
 }

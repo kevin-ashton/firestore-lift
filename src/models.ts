@@ -1,14 +1,20 @@
 type WhereFilter<ItemModel> = OptionalQuery<ItemModel>;
 type WhereFilterOp = "<" | "<=" | "==" | ">=" | ">" | "array-contains";
 type OrderByDirection = "desc" | "asc";
-type startEndAtTypes = string | number;
+export type startEndAtTypes =
+  | string
+  | number
+  | firebase.firestore.DocumentSnapshot
+  | firebase.firestore.QueryDocumentSnapshot;
 
 export interface SimpleQuery<ItemModel> {
   limit?: number;
   where?: WhereFilter<ItemModel>[];
   orderBy?: { pathObj: OptionalFlex<ItemModel>; dir?: OrderByDirection }[];
   startAt?: startEndAtTypes[];
+  startAfter?: startEndAtTypes[];
   endAt?: startEndAtTypes[];
+  endBefore?: startEndAtTypes[];
   _internalStartAfterDocId?: any; // Used for pagination. If defined then we ignore startAt
 }
 
